@@ -103,7 +103,8 @@ export async function POST(req: Request) {
         instructions: systemPrompt(memories),
         messages: await convertToModelMessages(messages.slice(-12)),
       });
-      writer.merge(toUIMessageStream({ stream: result.stream, sendStart: false }));
+      // We send finish ourselves, after the memory-write part.
+      writer.merge(toUIMessageStream({ stream: result.stream, sendStart: false, sendFinish: false }));
       const answer = await result.text;
 
       // 3. Write the finished turn to memory (queued; cognify runs in the sidecar).
@@ -117,6 +118,7 @@ export async function POST(req: Request) {
           data: { mode, status: "failed", detail: e instanceof Error ? e.message : String(e) },
         });
       }
+      writer.write({ type: "finish" });
     },
     onError: (e) => (e instanceof Error ? e.message : "chat failed"),
   });

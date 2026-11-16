@@ -3,6 +3,9 @@
 import { useState } from "react";
 import type { ChatDataParts, Mode } from "@/lib/types";
 
+const SPEAKERS = new Set(["user", "assistant"]);
+const MAX_CHIPS = 10;
+
 export function MemoryChips({
   memories,
   write,
@@ -16,7 +19,10 @@ export function MemoryChips({
 }) {
   const [open, setOpen] = useState(false);
   if (!memories) return null;
-  const nodes = dedupe(memories.items.flatMap((m) => m.nodes));
+  // Memories arrive best-first. Speaker labels ("user", "assistant") are
+  // extracted from every turn, so they carry no signal as chips.
+  const all = dedupe(memories.items.flatMap((m) => m.nodes)).filter((n) => !SPEAKERS.has(n.label.toLowerCase()));
+  const nodes = all.slice(0, MAX_CHIPS);
 
   return (
     <div className="mt-2 space-y-1.5 text-xs">
@@ -44,6 +50,7 @@ export function MemoryChips({
             </button>
           ))
         )}
+        {all.length > nodes.length && <span className="text-zinc-400">+{all.length - nodes.length} more</span>}
         {memories.items.length > 0 && (
           <button onClick={() => setOpen((o) => !o)} className="text-zinc-500 underline-offset-2 hover:underline">
             {open ? "hide passages" : `show ${memories.items.length} passage(s)`}

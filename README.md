@@ -105,6 +105,8 @@ Sidecar environment variables:
 | `CORS_ORIGINS` | `http://localhost:3000` | comma-separated |
 | `SYSTEM_ROOT_DIRECTORY`, `DATA_ROOT_DIRECTORY` | cognee defaults | where cognee keeps its stores (mount these for persistence) |
 
+App-side extras: `CHAT_MODEL` (default `gpt-4o-mini`), `OPENAI_BASE_URL` (any OpenAI-compatible Chat Completions server, such as Ollama, vLLM or LiteLLM), `COGNEE_DATASET`, `SIDECAR_TOKEN`, `DEMO_MODE=1`.
+
 ## Deploy
 
 - **UI on Vercel.** Import the repo. With no env vars it deploys in demo mode, which is safe to share. For live mode, set `OPENAI_API_KEY`, `SIDECAR_URL` and `SIDECAR_TOKEN`. The chat route sets `maxDuration = 60`.
@@ -134,9 +136,10 @@ Sidecar environment variables:
 ## Verified locally (2026-11-16)
 
 - `npm run build` and `npm run lint` pass (Next.js 16.4.6, AI SDK 7.0.173, React 19.3).
-- The sidecar runs on Python 3.12 with cognee 1.6.8 and no LLM key. `/health`, `/remember`, `/jobs`, `/recall`, `/graph` and `/forget` were exercised by `scripts/record_demo.py`, which produced the bundled demo fixture.
-- Demo mode was checked over HTTP: page render, the `/api/chat` replay stream, and `/api/graph` snapshots.
-- **Not verified:** live mode end to end with a real `OPENAI_API_KEY`, because no key was available. The chat route compiles against the AI SDK 7 types, but the OpenAI call itself was not run.
+- The sidecar ran on Python 3.12 with cognee 1.6.8 and **no LLM key** (local GLiNER extraction plus fastembed). `scripts/record_demo.py` called `/health`, `/forget`, `/recall`, `/remember`, `/jobs` and `/graph` on it and produced the bundled fixture: 5 turns, ending at 61 nodes and 123 edges. The first cognify took about 6 minutes, mostly the one-time 750 MB model download. Later turns took about 2 s each.
+- **Demo mode**, production build with no env vars: the page renders with the demo banner, `/api/chat` streams the replay with the recorded memories, `/api/graph?turns=N` returns the snapshots, and `/api/upload` returns 409. In the browser I stepped through the replay; chips focus their graph nodes and the console shows no errors.
+- **Live mode**, end to end against the real sidecar, with `scripts/mock_openai.py` standing in for the LLM (`OPENAI_BASE_URL`): turn 1 recalls nothing and is queued for memory. Turn 2 recalls turn 1, and the mock confirms the memory reached the system prompt. The graph view then picks up the new entities. A document upload went through cognify and was returned by the next recall.
+- **Not verified:** the real OpenAI API. No key was available, so `streamText` was only run against the OpenAI-compatible mock, not OpenAI's default Responses API path.
 
 ## License
 
