@@ -39,3 +39,11 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# sidecar
+sidecar/.venv/
+sidecar/.cognee_system/
+sidecar/.data_storage/
+sidecar/.env
+__pycache__/
+*.log

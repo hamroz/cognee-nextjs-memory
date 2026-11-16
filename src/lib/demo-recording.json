@@ -1,0 +1,52 @@
+{
+ "title": "Planning a Celery -> Temporal migration",
+ "source": "hand-authored",
+ "recorded_at": "2026-11-16T00:00:00+00:00",
+ "turns": [
+  {
+   "user": "Hi! I'm Lena, I lead the platform team at Parcelwise, a logistics startup in Berlin. We're migrating our ingestion service from Celery to Temporal.",
+   "assistant": "Nice to meet you, Lena. A Celery-to-Temporal move is a big shift: you go from fire-and-forget tasks to durable workflows with explicit retries and history. I'll keep track of the details as we go, so tell me about the constraints you're working with.",
+   "memories": [],
+   "graph": {
+    "nodes": [],
+    "edges": []
+   }
+  },
+  {
+   "user": "The big constraint: our Postgres cluster in Frankfurt can't take more than 200 writes per second at peak.",
+   "assistant": "Got it. That matters for Temporal: workflow history and activity results add write load if your persistence store shares that cluster. Two options: give Temporal its own persistence store, or rate-limit activities that write to the Frankfurt cluster (task-queue rate limits work well here) so the migration never pushes you past 200 writes per second.",
+   "memories": [],
+   "graph": {
+    "nodes": [],
+    "edges": []
+   }
+  },
+  {
+   "user": "Jonas owns the Temporal rollout. He prefers Go workers over Python.",
+   "assistant": "Noted. Go workers are a good fit for high-throughput ingestion. Because the existing Celery code is Python, a common path is to keep the workflow definitions in Go and port activities one at a time, running both stacks side by side behind a feature flag.",
+   "memories": [],
+   "graph": {
+    "nodes": [],
+    "edges": []
+   }
+  },
+  {
+   "user": "What should I keep in mind when planning the rollout?",
+   "assistant": "Based on what you've told me:\n\n1. **Write budget.** The Frankfurt Postgres cluster caps out at 200 writes per second at peak. Keep Temporal's persistence off that cluster, or rate-limit the activities that write to it.\n2. **Ownership.** Jonas owns the rollout, so let him set the cut-over criteria and the worker conventions.\n3. **Language.** Jonas prefers Go workers. Plan a gradual port of the Python Celery tasks instead of a big-bang rewrite.\n4. **Rollback.** Run Celery and Temporal side by side for the ingestion service until the Temporal path has handled a full peak cycle.",
+   "memories": [],
+   "graph": {
+    "nodes": [],
+    "edges": []
+   }
+  },
+  {
+   "user": "Who should I talk to about the worker language?",
+   "assistant": "Talk to Jonas. He owns the Temporal rollout at Parcelwise and has already said he prefers Go workers over Python.",
+   "memories": [],
+   "graph": {
+    "nodes": [],
+    "edges": []
+   }
+  }
+ ]
+}
