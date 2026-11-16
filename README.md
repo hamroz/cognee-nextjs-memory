@@ -1,36 +1,143 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Next.js + Vercel AI SDK chat with cognee memory
 
-## Getting Started
+A Next.js (App Router) chat template that gives a Vercel AI SDK chatbot long-term memory through [cognee](https://github.com/topoteretes/cognee). Before each answer the route recalls relevant memories from cognee and adds them to the prompt. After each answer the finished turn goes back into cognee's knowledge graph. The UI shows which memories an answer used and draws the graph as it grows.
 
-First, run the development server:
+> Author: Hamroz Gavharov. This is a community template, not an official cognee package.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+**Why this integration:** [cognee-integrations](https://github.com/topoteretes/cognee-integrations) covers Python agent frameworks, Mastra, OpenClaw, n8n, Dify, Claude Code, Codex and chat bots. Its `integrations/inventory.yml` lists a "Cognee for Vercel AI SDK" entry as `migration_status: pending`, and the source repo it names was not publicly reachable on 2026-11-16. As far as I could find, there is no public Next.js / Vercel AI SDK template, so this one aims to fill that gap.
+
+## What it shows
+
+| Feature | Where |
+| --- | --- |
+| Recall before answering: `cognee.recall(query, query_type=CHUNKS)`, with results injected into the system prompt as data, not instructions | `src/app/api/chat/route.ts`, `sidecar/app.py` `/recall` |
+| Write after each turn: `cognee.remember(turn)` (add + cognify) through a serial write queue, so a chat reply never waits on cognify | `sidecar/app.py` `/remember`, worker |
+| "Memories used" chips under each answer. Clicking one focuses that node in the graph | `src/components/MemoryChips.tsx` |
+| Live force-directed graph of the dataset (entities, types, optional chunks and documents). New nodes are highlighted after each turn | `src/components/GraphCanvas.tsx`, `/api/graph` → sidecar `/graph` |
+| Document upload (txt, md, csv, json, pdf) into the same memory | `/api/upload` → sidecar `/remember/file` |
+| **Demo mode** when keys or the sidecar are missing: a labelled replay of a recorded conversation, so a deployed URL always works | `src/lib/demo.ts`, `src/lib/demo-recording.json` |
+
+## Architecture
+
+```mermaid
+flowchart LR
+  subgraph Browser
+    UI["useChat UI<br/>memory chips + graph view"]
+  end
+  subgraph Next["Next.js (Vercel)"]
+    Chat["/api/chat<br/>streamText + UI message stream"]
+    Graph["/api/graph"]
+    Upload["/api/upload"]
+  end
+  subgraph Sidecar["FastAPI sidecar (any Python host)"]
+    Recall["POST /recall<br/>cognee.recall CHUNKS<br/>+ linked graph nodes"]
+    Remember["POST /remember<br/>queue → cognee.remember"]
+    Export["GET /graph<br/>get_formatted_graph_data"]
+  end
+  LLM[(OpenAI)]
+  Store[(cognee stores<br/>SQLite · LanceDB · Ladybug)]
+
+  UI -- messages --> Chat
+  Chat -- 1. recall --> Recall
+  Chat -- 2. prompt + memories --> LLM
+  Chat -- 3. finished turn --> Remember
+  Chat -- data-memories / text stream --> UI
+  UI -- poll after each turn --> Graph --> Export
+  UI --> Upload --> Remember
+  Recall & Remember & Export --> Store
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+The chat route streams one UI message per turn:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+1. `data-memories`: what cognee returned for the user message. The client renders these as chips.
+2. The model's text, streamed by `streamText`.
+3. `data-memory-write`: whether the turn was queued for cognify.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Cognify runs in the sidecar after the reply finishes, so the graph view polls `/api/graph` a few times after each turn to pick up new nodes.
 
-## Learn More
+### How chips link to graph nodes
 
-To learn more about Next.js, take a look at the following resources:
+`/recall` returns chunks. For each chunk, the sidecar looks up that chunk's node in the exported graph and returns its entity neighbours, which are the entities cognee extracted from that chunk. If the chunk id isn't in the graph, it falls back to matching entity labels in the chunk text. The chip ids are real graph node ids, so clicking one centres the node in the graph.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Modes
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+| | Demo mode | Live mode |
+| --- | --- | --- |
+| When | `OPENAI_API_KEY` or `SIDECAR_URL` missing, or `DEMO_MODE=1` | both set |
+| Answers | scripted, replayed word by word | `streamText` with your model |
+| Memories and graph | static snapshot in `src/lib/demo-recording.json` | live from the sidecar |
+| Labelling | amber banner "recorded conversation, not live", `recorded` tag on every chip row, snapshot provenance under the graph | green "Live mode" banner, `live` tag |
 
-## Deploy on Vercel
+The demo fixture is produced by `npm run record-demo` (`scripts/record_demo.py`). It runs the scripted conversation (`scripts/demo-script.json`) through a real sidecar the same way the chat route does: recall, remember, export the graph after each turn. It stores what cognee actually returned. The recording header gives the cognee version, whether an LLM was configured, and the date. Only the assistant answers are scripted.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Setup
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Requirements: Node 20+, and Python 3.10–3.14 for the sidecar (cognee's supported range), or Docker.
+
+```bash
+npm install
+cp .env.example .env.local       # add OPENAI_API_KEY; SIDECAR_URL=http://127.0.0.1:8000
+```
+
+**One command (venv sidecar + Next dev server):**
+
+```bash
+npm run dev:all                  # sidecar :8000, app http://localhost:3000
+```
+
+**Or run the sidecar in Docker:**
+
+```bash
+npm run sidecar                  # docker compose up -d --build
+npm run dev
+```
+
+**Sidecar without an LLM key.** cognee 1.6 runs locally without one. It extracts entities with the bundled GLiNER model and embeds with a local fastembed model. Both download on first use; GLiNER alone is about 750 MB. Recall uses `CHUNKS`, so it never needs an LLM. Set `LLM_API_KEY` on the sidecar to use LLM-based extraction instead. The chat answer itself always needs `OPENAI_API_KEY` in the Next.js app.
+
+Sidecar environment variables:
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `LLM_API_KEY` | unset | cognee's LLM. Unset means local GLiNER extraction |
+| `COGNEE_DATASET` | `nextjs_chat_memory` | default dataset |
+| `RECALL_SEARCH_TYPE` | `CHUNKS` | any `cognee.SearchType`. Non-CHUNKS types run with `only_context=True` |
+| `SIDECAR_TOKEN` | unset | require `Authorization: Bearer …` on every call except `/health` |
+| `CORS_ORIGINS` | `http://localhost:3000` | comma-separated |
+| `SYSTEM_ROOT_DIRECTORY`, `DATA_ROOT_DIRECTORY` | cognee defaults | where cognee keeps its stores (mount these for persistence) |
+
+## Deploy
+
+- **UI on Vercel.** Import the repo. With no env vars it deploys in demo mode, which is safe to share. For live mode, set `OPENAI_API_KEY`, `SIDECAR_URL` and `SIDECAR_TOKEN`. The chat route sets `maxDuration = 60`.
+- **Sidecar on any container host** (Fly.io, Railway, Render, a VM, Modal with a persistent volume): build `sidecar/Dockerfile`, mount a volume at `/data`, set `SIDECAR_TOKEN`, and set `CORS_ORIGINS` to your Vercel domain. The sidecar holds state in local file-based stores, so run **one** instance. To scale out, point cognee at Postgres, pgvector or Neo4j through its own configuration.
+
+## API (sidecar)
+
+| Method | Path | Body | Returns |
+| --- | --- | --- | --- |
+| GET | `/health` | | cognee version, LLM configured, recall type, queue depth |
+| POST | `/remember` | `{text, dataset?}` | `202 {job_id}` |
+| POST | `/remember/file` | multipart `file`, `dataset?` | `202 {job_id}` |
+| GET | `/jobs/{id}` | | `queued / running / completed / errored` |
+| POST | `/recall` | `{query, dataset?, top_k?}` | `{memories: [{id, text, score, nodes: [{id, label}]}]}` |
+| GET | `/graph?dataset=` | | `{nodes: [{id, label, type, properties}], edges: [{source, target, label}]}` |
+| POST | `/forget` | `{dataset?}` | `cognee.forget(dataset=…)` |
+
+## Limitations
+
+- **Single-tenant.** Everyone shares one dataset, and the sidecar uses cognee's default user. A real app would map its own users to cognee users or datasets, or use cognee's `session_id` for per-conversation memory.
+- **Graph freshness.** Writes are eventually consistent: a turn shows up in recall and in the graph only after its cognify run finishes. Local GLiNER on CPU takes seconds to tens of seconds per turn.
+- **Chip linking is approximate.** It uses chunk-to-entity edges from the exported graph and falls back to label matching.
+- **The graph export loads the whole dataset.** That is fine for a demo, but large datasets need server-side filtering or pagination.
+- **Not covered:** cognee sessions, `improve()` and feedback loops. These would be natural next steps.
+- **No automated tests yet.** Verification so far is manual (see below).
+
+## Verified locally (2026-11-16)
+
+- `npm run build` and `npm run lint` pass (Next.js 16.4.6, AI SDK 7.0.173, React 19.3).
+- The sidecar runs on Python 3.12 with cognee 1.6.8 and no LLM key. `/health`, `/remember`, `/jobs`, `/recall`, `/graph` and `/forget` were exercised by `scripts/record_demo.py`, which produced the bundled demo fixture.
+- Demo mode was checked over HTTP: page render, the `/api/chat` replay stream, and `/api/graph` snapshots.
+- **Not verified:** live mode end to end with a real `OPENAI_API_KEY`, because no key was available. The chat route compiles against the AI SDK 7 types, but the OpenAI call itself was not run.
+
+## License
+
+Apache-2.0, the same as cognee.

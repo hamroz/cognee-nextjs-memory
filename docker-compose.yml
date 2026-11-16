@@ -1,0 +1,20 @@
+services:
+  cognee-sidecar:
+    build: ./sidecar
+    ports:
+      - "8000:8000"
+    environment:
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      SIDECAR_TOKEN: ${SIDECAR_TOKEN:-}
+      COGNEE_DATASET: ${COGNEE_DATASET:-nextjs_chat_memory}
+      CORS_ORIGINS: http://localhost:3000
+    volumes:
+      - cognee-data:/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+volumes:
+  cognee-data:

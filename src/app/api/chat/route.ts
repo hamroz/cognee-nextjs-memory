@@ -1,4 +1,4 @@
-import { openai } from "@ai-sdk/openai";
+import { createOpenAI } from "@ai-sdk/openai";
 import {
   convertToModelMessages,
   createUIMessageStream,
@@ -13,6 +13,14 @@ import { sidecar } from "@/lib/sidecar";
 import type { ChatMessage, Memory } from "@/lib/types";
 
 export const maxDuration = 60;
+
+// OPENAI_BASE_URL switches to the Chat Completions API of any OpenAI-compatible
+// server (Ollama, vLLM, LiteLLM, ...). Without it: OpenAI's default API.
+function chatModel() {
+  const baseURL = process.env.OPENAI_BASE_URL;
+  const provider = createOpenAI({ apiKey: process.env.OPENAI_API_KEY, ...(baseURL ? { baseURL } : {}) });
+  return baseURL ? provider.chat(CHAT_MODEL) : provider(CHAT_MODEL);
+}
 
 function textOf(message: ChatMessage | undefined): string {
   if (!message) return "";
@@ -91,7 +99,7 @@ export async function POST(req: Request) {
 
       // 2. Answer with the memories injected.
       const result = streamText({
-        model: openai(CHAT_MODEL),
+        model: chatModel(),
         instructions: systemPrompt(memories),
         messages: await convertToModelMessages(messages.slice(-12)),
       });

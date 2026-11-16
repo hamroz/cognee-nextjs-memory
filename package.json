@@ -6,7 +6,11 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "dev:all": "bash scripts/dev.sh",
+    "sidecar": "docker compose up -d --build cognee-sidecar",
+    "sidecar:down": "docker compose down",
+    "record-demo": "sidecar/.venv/bin/python scripts/record_demo.py http://127.0.0.1:8000"
   },
   "dependencies": {
     "@ai-sdk/openai": "^4.0.118",
@@ -28,5 +32,7 @@
     "eslint-config-next": "16.4.6",
     "tailwindcss": "4.3.3",
     "typescript": "^5"
-  }
+  },
+  "author": "Hamroz Gavharov",
+  "license": "Apache-2.0"
 }

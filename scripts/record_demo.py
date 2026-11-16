@@ -54,6 +54,7 @@ def main():
 
     out = {
         "title": script["title"],
+        "source": "cognee-run",
         "recorded_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "cognee_version": health["cognee_version"],
         "llm_configured": health["llm_configured"],

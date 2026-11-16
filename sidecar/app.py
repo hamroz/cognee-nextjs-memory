@@ -265,5 +265,8 @@ async def graph(dataset: str = DEFAULT_DATASET) -> dict[str, Any]:
 
 @app.post("/forget", dependencies=[Depends(require_token)])
 async def forget(body: ForgetIn) -> dict[str, Any]:
+    user = await get_default_user()
+    if not await get_datasets_by_name([body.dataset], user.id):
+        return {"ok": True, "result": "dataset did not exist"}
     result = await cognee.forget(dataset=body.dataset)
     return {"ok": True, "result": result}
